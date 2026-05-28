@@ -1,0 +1,75 @@
+{
+  "name": "@delivr/payload-plugin-delivr",
+  "version": "0.0.1",
+  "description": "Delivr.ai identity + personalization plugin for PayloadCMS",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/kotovos/payload-delivr-personalization.git",
+    "directory": "packages/payload-plugin-delivr"
+  },
+  "type": "module",
+  "main": "./dist/index.js",
+  "types": "./dist/index.d.ts",
+  "exports": {
+    ".": {
+      "import": "./dist/index.js",
+      "types": "./dist/index.d.ts"
+    },
+    "./server": {
+      "import": "./dist/server/index.js",
+      "types": "./dist/server/index.d.ts"
+    },
+    "./client": {
+      "import": "./dist/client/index.js",
+      "types": "./dist/client/index.d.ts"
+    },
+    "./fields": {
+      "import": "./dist/fields/index.js",
+      "types": "./dist/fields/index.d.ts"
+    },
+    "./types": {
+      "import": "./dist/types.js",
+      "types": "./dist/types.d.ts"
+    }
+  },
+  "files": [
+    "dist",
+    "README.md",
+    "LICENSE"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.json",
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "lint": "eslint src",
+    "typecheck": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "payload": "^3.0.0",
+    "next": ">=15.0.0",
+    "react": ">=19.0.0"
+  },
+  "dependencies": {
+    "lru-cache": "^11.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/react": "^19.0.0",
+    "next": "^15.0.0",
+    "payload": "^3.0.0",
+    "react": "^19.0.0",
+    "typescript": "^5.5.0",
+    "vitest": "^2.1.0"
+  },
+  "keywords": [
+    "payload",
+    "payloadcms",
+    "plugin",
+    "personalization",
+    "delivr",
+    "identity",
+    "abm",
+    "b2b"
+  ]
+}
