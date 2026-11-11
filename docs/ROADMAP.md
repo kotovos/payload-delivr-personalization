@@ -1,175 +1,240 @@
 # Roadmap
 
-10-week build to GA. 5 phases. Each phase ships a usable cut.
+**Status:** v1 scope, 2026-11-11. Replaces the 10-week plan of 2026-05-28.
+
+Six phases. Estimates are not filled in: the builder sets them after Phase 0.
+
+```
+0  Data check ──► A  Foundation + contract ──┬──► B  Resolve service ──┐
+                                             │                         ├──► D  Dogfood
+                                             └──► C  Core library ─────┘
+                                                        │
+                                                        └──► E  Payload layer (off the critical path)
+```
+
+B and C run in parallel once A freezes the contract. D needs both. E needs
+only C. It can slip without delaying D.
 
 ---
 
-## Phase 0 — Foundation (Week 1)
+## Phase 0: data check
 
-**Goal:** Repo ready. Tooling green. Empty plugin installs into demo Next.js+Payload app.
+**Goal:** know whether the data can carry the product before building on it.
+
+The method, the sample and the results are internal. They are recorded
+outside this repository.
 
 Tasks:
 
-- Repo scaffolding (pnpm workspace, tsconfig, eslint, prettier, vitest)
-- CI (lint, typecheck, test on Node 22, Payload 3.x matrix)
-- Plugin skeleton (`delivrPlugin` no-op)
-- Demo app (`examples/nextjs-payload-demo`) — fresh Payload + Next.js install
-- README + initial docs committed
-- Issue templates, PR template, CODEOWNERS
-- npm publish dry run
+- Confirm the data source and its snapshot date
+- Take a sample of real visitor addresses from an existing internal record.
+  The sample stays internal and is deleted when Phase 0 closes
+- For that sample, count matched, ambiguous and no-record at several
+  candidate thresholds
 
-**Exit criteria:** `pnpm add @delivr/payload-plugin-delivr` works locally. CI green. Demo boots.
+**Exit:** a written result with those counts exists, and the product owner
+has recorded one of: continue, change scope, stop.
 
----
+## Phase A: foundation and contract
 
-## Phase 1 — α1: IP firmographics + pixel (Weeks 2-3)
-
-**Goal:** Pixel fires. RSC resolves IP → company. No personalization yet — just signal capture + visibility.
+**Goal:** the repository builds, and both sides share one frozen contract.
 
 Tasks:
 
-- `<DelivrPixel/>` client component + Script integration
-- `getVisitorContext()` server util (IP-only path)
-- `resolveFromDataApi` client with timeout + retry
-- LRU cache layer + pluggable interface
-- Types module (`VisitorContext`, `AudienceRule`)
-- `/api/delivr/health` endpoint
-- `cms.pageview_resolved` event emit (server-side)
-- Demo app shows `ctx.company` in a debug banner
-- Unit tests for matcher (forward-looking)
-- Plugin options validation
+- Tooling: tsconfig, eslint, prettier, vitest, build (#1)
+- CI on Node 22: build, lint, typecheck, test (#2)
+- Add `packages/personalization` as the core package
+- Scaffold cleanup:
+  - Set `"private": true` on both packages
+  - Plugin `package.json`: drop the `./client`, `./server`, `./fields` and
+    `./types` exports, the `lru-cache` dependency, and the `next` and `react`
+    peer dependencies
+  - Plugin `src/index.ts`: drop the default URLs, `cookieName` and every
+    option that is not in PAYLOAD.md
+  - Plugin `src/types.ts`: reduce to `DelivrPayloadOptions`. Core types move
+    to the core package
+- `contracts/resolve/fixtures/`: the client fixtures in RESOLVE-API section
+  9.1
+- `contracts/resolve/response.schema.json`: the section 5 bodies as a JSON
+  Schema
+- `tools/mock-resolve`: a server that replays the fixtures
+- Review RESOLVE-API.md from the service side. Answer R1 and R2. Freeze
 
-**Exit criteria:** Demo site loaded with corporate IP → banner shows correct company. p50 resolution < 50ms.
+**Exit:**
 
----
+- CI passes build, lint, typecheck and test
+- A test asserts the mock server returns every fixture
+- A test asserts every `conforming: true` fixture with status 200 validates
+  against the schema
+- RESOLVE-API.md status line reads `Frozen` with a date, and R1 and R2 are
+  answered in the file
 
-## Phase 2 — α2: Block audienceRules + RSC renderer (Weeks 4-5)
+## Phase B: resolve service
 
-**Goal:** First real personalization. Marketing editor can author conditional Blocks. Page renders matched block.
+**Goal:** the Visitor Resolve API answers real requests.
 
-Tasks:
+Not built in this repository. Tracked in Delivr's own tracker. Implementation
+tasks are recorded internally.
 
-- `audienceRulesField` group field
-- `injectIntoBlocks` config mutator — opt-in via `blocks.include` / `exclude`
-- Rule matcher (industries, revenue, employee, naics, countries, isReturning)
-- Specificity scorer
-- `renderBlocks(blocks, ctx)` RSC helper
-- Fallback block selection
-- Server-side `cms.variant_shown` event emit
-- Demo app: 1 page with 3 industry-conditional Hero blocks
-- Vitest: matcher + scorer 100% coverage
-- Documentation: "Author your first audience-conditional block"
+Contract-level tasks:
 
-**Exit criteria:** Demo `/platform` page shows different Hero per industry. Editor configured audience rules via Payload admin.
+- Every request, response and status in RESOLVE-API.md
+- One company or none, with the threshold from Phase 0
+- Rate limit and quota per key
+- Request count, latency and reason metrics
 
----
+**Exit:**
 
-## Phase 3 — β1: Variant fields + form pre-fill + audience sync (Weeks 6-7)
+- Conformance checks C1 to C13 in RESOLVE-API section 9.2 pass against the
+  deployed service
+- Server-side p99 is written into RESOLVE-API section 7 with method, request
+  count and date
+- One request sent from the dogfood site's own network returns a 200 inside
+  the 100 ms deadline
 
-**Goal:** Variants at field level (Hero headline, CTA). Audiences synced from Delivr. Forms pre-fill.
+## Phase C: core library
 
-Tasks:
-
-- `variantField()` helper — array field generator
-- `pickVariant()` selector
-- React `useDelivrPrefill()` client hook
-- `delivr-audiences` collection
-- `delivr-technologies` collection
-- `audiencesSync` job (nightly)
-- `technologiesSync` job (weekly)
-- Block list admin badge — "3 audience variants"
-- Demo: full landing page using variant fields
-- `preview-as` endpoint + admin toolbar control
-- Docs: variant field API
-
-**Exit criteria:** Editor configures 3 hero variants per audience in admin. Preview-as toggle switches rendered output. Form auto-populates `company` + `industry`.
-
----
-
-## Phase 4 — β2: Webhook + observability + hardening (Weeks 8-9)
-
-**Goal:** Inbound webhook. Healthcheck robust. Metrics + logs. CSP + privacy docs.
+**Goal:** `@delivr/personalization` complete against the mock server.
 
 Tasks:
 
-- `/api/delivr/webhook` + HMAC verification
-- Webhook handlers: audience updated, member added/removed
-- Structured logging (`utils/logger.ts`)
-- Metrics emitter (pluggable sink)
-- `/api/delivr/health` deep checks
-- Cookie consent gate + `requireConsent` option
-- HEM resolution path (gated)
-- CSP + privacy + compliance docs
-- Load test (k6) — 1000 RPS RSC render with resolution
-- Vercel KV cache adapter (optional)
-- Error tracking (Sentry sink example)
+- `createDelivr`: off, misconfigured and active states, logging
+- Resolve client: fetch, deadline, body validation, field mapping (#6)
+- Cache: in-process LRU, GPC bypass, single flight (#7)
+- Circuit breaker, including the probe
+- Client IP: the three source forms, parsing, blocked ranges
+- Bot guard
+- `matchRule`, normalization, specificity (#12)
+- `selectVariant` (#15, core half) and `selectBlocks` (#13)
+- `onResolve` and `onSelect` hooks (#14, rewritten)
 
-**Exit criteria:** 1000 RPS sustained. p99 < 100ms added latency. Webhook updates `delivr-audiences` in real time.
+**Exit:**
 
----
+- Every row of SPEC section 15 has tests, and CI passes
+- Every row of both RULES.md section 9 tables is a test case
+- Every table row in CLIENT-IP.md is a test case
+- The test setup fails any outbound request that is not to the mock server
 
-## Phase 5 — GA (Week 10)
+## Phase D: dogfood on delivr-ai-website
 
-**Goal:** Public release. 3 design-partner sites in production.
+**Goal:** real traffic, real numbers. Measures M1 to M10 are in PRD section 7.
+
+**Stage 0, baseline.** Before any change:
+
+- Record 4 weeks of daily pixel event volume (M7)
+- Record TTFB p75 for the routes chosen in PRD Q2 (M8)
+- Decide package distribution (PRD Q1)
+- Set `clientIp` for the site's proxy chain (PRD Q3)
+
+**Stage 1, shadow.** At least 7 days and at least 1,000 events that made a
+call:
+
+- Call `getVisitorContext` on the chosen routes
+- Run the selectors with the planned variants, but always render the default.
+  `onSelect` then records what would have been shown
+- Wire `onResolve` and `onSelect` to the site's analytics
+- Check the response headers of each chosen route for shared caching (PRD Q4)
+- Debug view of the resolved context, not reachable by the public (#9)
+- Run the forged-header check in CLIENT-IP.md section 8, using the debug view
+  and an address Phase 0 showed to match a company
+- Kill switch verified: `DELIVR_ENABLED=false` with the other settings removed
+
+**Stage 1 report.** A value for each of M1 to M10.
+
+**Gates.** Each is recorded as pass or fail in the report:
+
+- M5: `no_ip` rate at or below 0.5%
+- M6: zero page errors traced to the integration
+- M7: pixel volume inside the baseline range
+- M10: zero `misconfigured` events
+- The response header check is recorded for each route, and none allows
+  shared caching
+- The forged-header check passed
+
+**Decision.** The product owner reads the report and records one of:
+continue to stage 2, change scope, stop.
+
+**Stage 2.** Only if the decision is to continue and every gate passed: one
+variant slot on one route renders for real.
+
+**Exit:**
+
+- The stage 1 report exists with all ten values and all six gate results
+- The decision is recorded
+- If the decision was to continue: one variant slot is live
+
+## Phase E: Payload layer
+
+**Goal:** the same core drives a Payload site.
 
 Tasks:
 
-- npm publish `@delivr/payload-plugin-delivr@1.0.0`
-- Public docs site (`docs.delivr.ai/payload`)
-- Launch blog post + LinkedIn series
-- 3 design-partner sites migrated (one is `delivr-ai-website`)
-- Support runbook
-- Compatibility matrix maintained
-- Public roadmap for v1.1 (intent triggers, account-based CTAs, performance mirror)
+- Pin one Payload 3.x version. Work through P1 to P6 in PAYLOAD.md section 6
+- `audienceRulesField` with hooks and validation (#10)
+- `injectIntoBlocks`: opt-in by slug, idempotent, throws on an unknown slug
+  (#11)
+- `examples/nextjs-payload-demo` (#3) running against the mock server
+- One demo page: a `hero` slot with an industry block and a fallback block
 
-**Exit criteria:** Public on npm. 3 sites live. >65% B2B identification on each. NPS feedback collected.
+**Exit:**
 
----
-
-## Post-GA (v1.1 — v2)
-
-| Cut  | Feature                                                      |
-| ---- | ------------------------------------------------------------ |
-| v1.1 | Intent-signal triggered modules                              |
-| v1.2 | Account-based CTAs (known account → assigned AE)             |
-| v1.3 | `delivr-variant-performance` mirror + inline admin analytics |
-| v1.4 | Repeat-visitor escalation rules                              |
-| v1.5 | Geo/locale Global field + nav reorder                        |
-| v2.0 | Edge-resolved personalization (Vercel Edge Middleware)       |
-| v2.1 | Multi-armed bandit variant selection                         |
-| v2.2 | Lexical inline personalization                               |
-| v2.3 | Embedded Delivr analytics admin view                         |
+- An automated test starts the demo with the mock server and sends requests
+  with a browser user agent and a forced documentation-range address. One
+  address has a matching fixture, and the test asserts the industry block
+  renders. Another has none, and the test asserts the fallback renders
+- P1 to P6 are answered in PAYLOAD.md, and the pinned version is in SPEC
+  section 16
 
 ---
 
-## Workstream sequencing (parallel-safe)
+## Existing issues
 
-Phase 0 must finish before any other phase.
+Filed 2026-05-28 against the old plan. None are closed. They need relabeling
+to match this roadmap. That has not been done yet.
 
-Phase 1 + Phase 2 can overlap by 1 week (Phase 2 starts when `getVisitorContext` stable).
+| Issue      | Title (short)                                                                                                              | v1 disposition                                           |
+| ---------- | -------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------- |
+| #1         | Repo scaffolding                                                                                                           | Phase A. Add the second package                          |
+| #2         | CI matrix, PR template, CODEOWNERS                                                                                         | Phase A                                                  |
+| #3         | Demo app skeleton                                                                                                          | Phase E                                                  |
+| #4         | Changesets, npm publish dry run                                                                                            | Deferred. No publish in v1                               |
+| #5         | DelivrPixel component                                                                                                      | Deferred. v1 installs no pixel                           |
+| #6         | getVisitorContext                                                                                                          | Phase C. Rewrite to SPEC section 4                       |
+| #7         | Cache, LRU, IP bucketing                                                                                                   | Phase C. No bucketing, no pluggable interface            |
+| #8         | /api/delivr/health                                                                                                         | Deferred                                                 |
+| #9         | Debug banner                                                                                                               | Phase D                                                  |
+| #10        | audienceRulesField                                                                                                         | Phase E. New field list                                  |
+| #11        | injectIntoBlocks                                                                                                           | Phase E. Opt-in only                                     |
+| #12        | Rule matcher and scorer                                                                                                    | Phase C. New semantics                                   |
+| #13        | renderBlocks                                                                                                               | Phase C. Becomes `selectBlocks`                          |
+| #14        | cms.variant_shown emitter                                                                                                  | Phase C. Becomes the `onSelect` hook                     |
+| #15        | variantField and pickVariant                                                                                               | Split. `selectVariant` in Phase C. Field helper deferred |
+| #16 to #31 | Audiences, sync, pre-fill, preview-as, webhook, logging, consent, KV, load test, HEM, publish, docs site, partners, launch | Deferred                                                 |
 
-Phase 3 splits cleanly into 3 parallel streams:
+## Work with no issue yet
 
-- A: variant fields + renderer
-- B: collections + sync jobs
-- C: pre-fill hook + admin badge
-
-Phase 4 splits:
-
-- A: webhook + security
-- B: observability + load test
-- C: HEM path + consent
-
-Phase 5 = launch ops, no parallel split.
+- Phase 0 data check
+- Core package split and scaffold cleanup
+- Contract fixtures, response schema and mock server
+- Circuit breaker
+- Client IP handling
+- Bot guard
+- Dogfood integration, all stages
+- Package distribution for the dogfood
+- The resolve service itself (tracked outside this repository)
 
 ---
 
 ## Risk register
 
-| Risk                                             | Phase | Mitigation                                  |
-| ------------------------------------------------ | ----- | ------------------------------------------- |
-| data-api `/v1/resolve` endpoint not yet built    | 1     | Coordinate with data-api team; stub locally |
-| Payload 3.x Block field injection API unstable   | 2     | Pin minor version range; track CHANGELOG    |
-| Vercel function cold start kills cache hit rate  | 4     | KV adapter ready by β2                      |
-| Cookie consent reduces HEM hit rate below target | 4-5   | Document IP-only path as primary value prop |
-| Design partner scope creep                       | 5     | Strict v1 feature freeze at β2              |
+| Risk                                                 | Phase | Mitigation                                    |
+| ---------------------------------------------------- | ----- | --------------------------------------------- |
+| Match rate is too low to be useful                   | 0     | Checked first, before any build               |
+| Contract changes after C starts                      | A     | Freeze in A. Additive changes only afterwards |
+| The service misses the latency target                | B     | Measured in B exit, before D                  |
+| Client IP setting wrong behind the website's proxies | D     | M5 gate and the forged-header check           |
+| Configuration missing in production                  | D     | M10 gate                                      |
+| Personalized HTML cached in front of the site        | D     | Header check per route before stage 2         |
+| Static marketing routes become dynamic               | D     | One or two routes only. M8 before and after   |
+| Cold connections time out after each deploy          | D     | Watch M2 after deploys. Warm-up is deferred   |
+| Scope creeps back toward the old plan                | all   | SPEC section 17 is the fence                  |

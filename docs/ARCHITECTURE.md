@@ -1,195 +1,181 @@
 # Architecture
 
+**Status:** v1 scope, 2026-11-11. Replaces the 2026-05-28 draft.
+
 ## System diagram
 
 ```
-Browser
-  │  pixel.js → POST /events
-  │  cookie _dlvr set
-  ▼
-Next.js host (Payload frontend)
-  ├─ <DelivrPixel/> in layout
-  ├─ RSC page route
-  │     ctx = getVisitorContext()  ──► data-api /v1/resolve
-  │     blocks = renderBlocks(page.layout, ctx)
-  │     server emits cms.variant_shown ──► pixel-api /v1/events/batch
-  ├─ /api/delivr/webhook  (inbound from Delivr)
-  └─ Payload Admin
-        ├─ delivr-audiences (synced)
-        ├─ delivr-technologies (synced)
-        └─ Block sidebar "Audience" tab
-              ▲
-              │ nightly job
-              │
-        integration-svc /v1/audiences
+Visitor browser
+   │  GET /platform
+   ▼
+Host edge / proxy chain          (sets or forwards the client IP header)
+   │
+   ▼
+Next.js host app (server)
+   │
+   │  ctx = await delivr.getVisitorContext(await headers())
+   │        ├─ off or misconfigured? -> anonymous
+   │        ├─ bot?            -> anonymous
+   │        ├─ client IP       -> none or blocked -> anonymous
+   │        ├─ process cache   -> hit -> ctx        (skipped when GPC is set)
+   │        ├─ breaker open?   -> anonymous
+   │        └─ POST Visitor Resolve API (100 ms deadline)
+   │                 │
+   │                 ▼
+   │        Delivr resolve service                  [NOT BUILT]
+   │                 │
+   │                 ▼
+   │        Delivr.ai entity resolution data: IP -> company
+   │
+   │  variant = delivr.selectVariant(variants, ctx)     no I/O
+   │  blocks  = delivr.selectBlocks(page.layout, ctx)   no I/O
+   ▼
+HTML response (must not be stored by a shared cache)
 ```
+
+There is one network dependency: the Visitor Resolve API. Its contract is in
+[RESOLVE-API.md](RESOLVE-API.md). It does not exist yet.
+
+## What v1 is not
+
+- No pixel install, no cookie, no client-side JavaScript from this project.
+- No Delivr event ingest. Measurement goes through the host's own analytics.
+- No Payload collections, endpoints or jobs.
 
 ## Request lifecycle
 
-1. Browser GET `/platform`.
-2. Next.js RSC runs. `getVisitorContext()` reads IP + cookie.
-3. Cache check. Miss → POST `data-api /v1/resolve` with 100ms timeout.
-4. data-api: cookie → HEM → contact; IP → company_ip_address → company.
-5. Returns VisitorContext.
-6. Plugin loads page doc from Payload local API.
-7. `renderBlocks` scores each block against ctx. Picks winners.
-8. RSC serializes HTML. Response sent.
-9. Server fires `cms.variant_shown` events to pixel-api (non-blocking).
-10. Browser renders. Pixel script loads. Fires `pageview`.
+1. Browser requests a personalized route.
+2. The route calls `getVisitorContext` with the request headers.
+3. The core runs its guards: off, misconfigured, bot, client IP. The address
+   is parsed, canonicalized and checked against the blocked ranges by the
+   core, whatever its source.
+4. Cache lookup on `pixelId` plus the canonical address, unless the request
+   carries a GPC signal.
+5. On a miss, one POST to the Visitor Resolve API under a 100 ms deadline.
+6. The response becomes a `VisitorContext`. A miss, an error or a timeout
+   becomes an anonymous context. The call never throws.
+7. `selectVariant` or `selectBlocks` picks content. Both are synchronous and
+   do no I/O.
+8. The page renders. `onResolve` and `onSelect` have fired, and the host has
+   sent them to its analytics.
 
-## Module layout
+The exact outcome of every branch is the table in SPEC section 4.
+
+## Packages
 
 ```
-packages/payload-plugin-delivr/
-├─ src/
-│  ├─ index.ts                    # delivrPlugin entry
-│  ├─ options.ts                  # options + defaults + validation
-│  ├─ types.ts                    # VisitorContext, AudienceRule, etc.
-│  │
-│  ├─ server/
-│  │  ├─ getVisitorContext.ts     # main resolver
-│  │  ├─ resolveFromDataApi.ts    # data-api client
-│  │  ├─ cache.ts                 # LRU + interface
-│  │  ├─ ipUtils.ts               # ip class C bucketing
-│  │  ├─ consent.ts               # consent gate
-│  │  └─ events.ts                # variant_shown emitter
-│  │
-│  ├─ client/
-│  │  ├─ DelivrPixel.tsx          # Script tag component
-│  │  ├─ useDelivrPrefill.ts      # form pre-fill hook
-│  │  └─ track.ts                 # window.dlvr wrapper
-│  │
-│  ├─ render/
-│  │  ├─ renderBlocks.ts          # block-level filter + score
-│  │  ├─ pickVariant.ts           # variant array picker
-│  │  ├─ matcher.ts               # rule match logic
-│  │  └─ scorer.ts                # specificity scoring
-│  │
-│  ├─ fields/
-│  │  ├─ audienceRulesField.ts    # group field
-│  │  ├─ variantField.ts          # array helper
-│  │  └─ injectIntoBlocks.ts      # config mutator
-│  │
-│  ├─ collections/
-│  │  ├─ delivrAudiences.ts
-│  │  ├─ delivrTechnologies.ts
-│  │  └─ delivrVariantPerformance.ts  # v2
-│  │
-│  ├─ endpoints/
-│  │  ├─ health.ts
-│  │  ├─ webhook.ts
-│  │  ├─ resolve.ts
-│  │  └─ previewAs.ts
-│  │
-│  ├─ jobs/
-│  │  ├─ audiencesSync.ts
-│  │  ├─ technologiesSync.ts
-│  │  └─ performanceRollup.ts     # v2
-│  │
-│  ├─ admin/
-│  │  ├─ AudienceBadge.tsx        # block list cell
-│  │  └─ PreviewAsControl.tsx     # preview-as toolbar
-│  │
-│  └─ utils/
-│     ├─ hmac.ts
-│     ├─ retry.ts
-│     └─ logger.ts
+packages/
+├─ personalization/                 @delivr/personalization (core)
+│  ├─ src/
+│  │  ├─ index.ts                   public exports
+│  │  ├─ createDelivr.ts            options, disabled instance, wiring
+│  │  ├─ getVisitorContext.ts       outcome table, orchestration
+│  │  ├─ resolveClient.ts           fetch, deadline, body validation, mapping
+│  │  ├─ breaker.ts                 circuit breaker
+│  │  ├─ cache.ts                   in-process LRU, single flight
+│  │  ├─ clientIp.ts                sources, parsing, blocked ranges
+│  │  ├─ bots.ts                    default isBot
+│  │  ├─ rules/
+│  │  │  ├─ normalize.ts            domain, NAICS, country
+│  │  │  ├─ matchRule.ts            match and score
+│  │  │  ├─ selectVariant.ts
+│  │  │  └─ selectBlocks.ts
+│  │  └─ types.ts
+│  └─ tests/
 │
-├─ migrations/
-├─ tests/
-└─ package.json
+└─ payload-plugin-delivr/           @delivr/payload-plugin-delivr
+   ├─ src/
+   │  ├─ index.ts                   delivrPlugin
+   │  ├─ audienceRulesField.ts      the group field, hooks, validation
+   │  ├─ injectIntoBlocks.ts        config walker, opt-in by slug
+   │  └─ options/                   industry and country lists
+   └─ tests/
+
+contracts/resolve/                  shared request and response fixtures
+tools/mock-resolve/                 mock server that replays the fixtures
+examples/nextjs-payload-demo/       Payload demo app
 ```
 
-## Data flow contracts
+The core has no runtime dependencies at all.
 
-### data-api `/v1/resolve`
+## Why two packages
 
-Request:
-
-```json
-POST /v1/resolve
-x-api-key: ...
-{
-  "ip": "203.0.113.5",
-  "cookie": "_dlvr=abc123",
-  "consent": { "hem": true }
-}
-```
-
-Response (200):
-
-```json
-{
-  "company": { "domain": "acme.com", "industry": "software", "revenueRange": "$50M-$100M", ... },
-  "contact": { "hem": "...", "email": "...", "title": "VP Engineering", ... },
-  "audiences": ["aud-saas-50m+", "aud-tech-buyer"],
-  "intentSignals": ["identity-resolution", "cdp"],
-  "visit": { "isReturning": true, "visitCount": 4 }
-}
-```
-
-### pixel-api `/v1/events/batch`
-
-```json
-POST /v1/events/batch
-x-api-key: ...
-{ "events": [{ "event_type": "cms.variant_shown", "pixel_id": "...", ... }] }
-```
-
-### integration-svc `/v1/audiences`
-
-```json
-GET /v1/audiences?organization_id=...
-[{ "audience_id": "aud-saas-50m+", "name": "SaaS $50M+", "member_count": 12340 }]
-```
-
-## Caching strategy
-
-Two-tier:
-
-1. **Request-scoped memo** via `React.cache()` — same RSC request hits resolver once.
-2. **Process-scoped LRU** keyed by `sha256(ip_class_c || cookie_hash)`. 1000 entries default, 5min TTL.
-
-Pluggable backend for multi-instance deploys (Vercel KV, Redis). Interface in `cache.ts`.
+The first deployment target, delivr-ai-website, is a Next.js 16 site with no
+CMS. A Payload-only plugin could not be dogfooded there. Splitting the core
+out also keeps the rule logic testable without booting Payload.
 
 ## Failure modes
 
-| Failure                | Behavior                                               |
-| ---------------------- | ------------------------------------------------------ |
-| data-api 5xx           | Anonymous fallback; log; metric `delivr.resolve.error` |
-| data-api timeout       | Anonymous fallback after `resolutionTimeoutMs`         |
-| Cache backend down     | Bypass cache; direct call; warn once                   |
-| pixel-api ingest down  | Events dropped after queue full (1000); log warning    |
-| Audience sync fails    | Last good state retained; alarm if stale > 36h         |
-| Webhook HMAC bad       | 401; log; rate-limit by IP                             |
-| Invalid plugin options | Throw at startup                                       |
+| Failure                                 | Behavior                                                            |
+| --------------------------------------- | ------------------------------------------------------------------- |
+| Required option missing or invalid      | Anonymous, `misconfigured`, one error log. No throw, so builds pass |
+| Kill switch on                          | Anonymous, `disabled`. No other setting is needed                   |
+| Resolve API deadline hit                | Anonymous, `timeout`. Counts toward the breaker                     |
+| Network error, 5xx, invalid 200 body    | Anonymous, `error`. Counts toward the breaker                       |
+| 5 consecutive failures                  | Breaker opens for 30 s. Requests skip the call                      |
+| 429                                     | Anonymous, `rate_limited`. Breaker opens for `Retry-After`          |
+| 401 or 403                              | Anonymous, `rejected`. Breaker opens for 60 s, one error log        |
+| Any other status                        | Anonymous, `rejected`. Breaker unchanged unless it was the probe    |
+| No client IP, or a blocked one          | Anonymous, `no_ip`. No call is made                                 |
+| `isBot` or a `clientIp` function throws | Caught and logged. Not a bot, or `no_ip`                            |
+| Wrong client IP setting                 | Silent. Wrong or no company. Watch the `no_ip` and match rates      |
+| Visitor forges the client IP header     | Only possible when the setting is wrong. See CLIENT-IP.md           |
+| Shared cache stores personalized HTML   | One company's variant reaches everyone. Check response headers      |
+| Hook throws                             | Caught and logged. Rendering continues                              |
+
+Every runtime failure degrades to the default content. Nothing in the request
+path can fail the page or the build.
 
 ## Performance budget
 
-| Op                                     | Budget                                 |
-| -------------------------------------- | -------------------------------------- |
-| Resolution (cache hit)                 | < 1ms                                  |
-| Resolution (cache miss, data-api ok)   | < 50ms p50, < 100ms p99 (hard timeout) |
-| renderBlocks (50 blocks, 5 rules each) | < 5ms                                  |
-| Total added TTFB                       | < 60ms p50                             |
+| Operation                        | Budget                     | Status                 |
+| -------------------------------- | -------------------------- | ---------------------- |
+| Cache hit                        | under 1 ms                 | Target                 |
+| Cache miss, service healthy      | bounded by 100 ms deadline | Hard limit             |
+| Resolve API p99, server side     | 25 ms                      | Proposed, not measured |
+| `selectBlocks`, 50 blocks        | under 1 ms                 | Target                 |
+| Worst case added to a page       | 100 ms                     | Hard limit             |
+| Worst case with the breaker open | under 1 ms                 | By design              |
 
-## Deployment
+The deadline covers the whole call: connect, send, read and parse. The cache
+is synchronous and in process, so it adds nothing to the worst case.
 
-- Plugin published to npm: `@delivr/payload-plugin-delivr`
-- Host app deploys to wherever Payload runs (Vercel, Railway, AWS, GCP)
-- No separate service to deploy
-- Pixel served from Delivr's CDN (`pixel.delivr.ai`)
+None of the latency numbers are measured. Dogfood produces the first real
+values. The first call after a process starts pays connection setup inside
+the deadline and may time out.
 
-## Scaling considerations
+## Rendering model
 
-- LRU cache stateful per-process. With Vercel functions, low cache hit rate. Switch to KV.
-- Variant render is pure function of (blocks, ctx) — cacheable at CDN if URL includes audience hash.
-- Heavy variant counts → server-side filter before serialize. Don't ship hidden variants.
-- Audience collection grows slowly (hundreds-thousands). No pagination concerns.
+Reading headers makes a route dynamic. v1 accepts that for a small set of
+named routes.
+
+A site whose marketing pages are static has a second option: resolve in
+`proxy.ts`, then rewrite to a pre-rendered variant path keyed by segment. That
+keeps pages static and cacheable. The core already works there because it
+takes plain `Headers`. It is deferred until v1 shows the match rate is worth
+it.
+
+## Cache scope
+
+The cache is per process and lives in memory. On a host that runs several
+instances or short-lived functions the hit rate is low. A shared store is
+deferred. v1 has no pluggable cache interface.
 
 ## Security boundaries
 
-- Plugin code runs in Payload host process.
-- API key in env, never in client bundle. Lint rule + build check.
-- HEM never echoed to client.
-- Preview-as cookie signed (HMAC) so editors can't impersonate arbitrary contexts without admin token.
+- The resolve key lives in server environment only. The host's wiring file
+  imports `server-only`, so a client bundle that pulls it in fails the build.
+- The visitor IP leaves the host only in the server-to-server resolve call,
+  over HTTPS.
+- The cache holds visitor addresses in process memory for up to the TTL.
+  Nothing is persisted.
+- A GPC request never reads or writes the cache, so the service's policy
+  always sees it.
+- No person-level data flows through v1.
+
+## Deployment
+
+- Dogfood: the core is consumed by delivr-ai-website as a private package.
+  How it is distributed is an open question in the PRD.
+- No service is deployed from this repository. The Visitor Resolve API is
+  deployed by its owner.

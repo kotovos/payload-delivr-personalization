@@ -1,131 +1,162 @@
-# PRD — Delivr.ai Personalization for PayloadCMS
+# PRD: Delivr.ai personalization for Next.js and PayloadCMS
 
 **Owner:** GK (CTO, Delivr.ai)
-**Status:** Draft v1
-**Last updated:** 2026-05-28
+**Status:** v1 scope approved 2026-11-11
+**Last updated:** 2026-11-11
+
+"Product owner" below is the owner named above. "Builder" is the engineer
+assigned to this work.
 
 ---
 
 ## 1. Problem
 
-PayloadCMS sites render the same content to every visitor. Marketing teams running Payload-backed sites cannot tailor hero, CTA, or layout to **who** the visitor is — their company, industry, role, or buying intent — without bolting on a separate personalization engine (Mutiny, Intellimize, Optimizely). Those tools require duplicate content authoring, fragmented analytics, and ignore B2B identity signals.
+Marketing sites show the same content to every visitor. Tailoring the hero or
+a call to action to the visitor's company normally means adding a separate
+personalization product, with duplicate authoring and separate analytics.
 
-Delivr.ai already resolves 70%+ of B2B traffic to company + contact identity via its 6.5B-vertex identity graph. The signal exists. The CMS does not consume it.
+Delivr.ai associates IP addresses with companies through entity resolution.
+Nothing lets a website consume that signal at render time.
 
-## 2. Users
+## 2. Decisions (2026-11-11)
 
-| Persona                 | Need                                                                 |
-| ----------------------- | -------------------------------------------------------------------- |
-| **Marketing editor**    | Author one page with audience-specific variants in the same admin UI |
-| **Demand gen / growth** | Know which variants convert per industry/persona; iterate            |
-| **Developer**           | One plugin install. No custom personalization stack.                 |
-| **Sales / RevOps**      | Personalized CTAs route known accounts to assigned AE Calendly       |
-| **Visitor (B2B buyer)** | Sees content relevant to their company + role                        |
+| #   | Decision                                                                                       |
+| --- | ---------------------------------------------------------------------------------------------- |
+| D1  | One builder owns both sides: the client packages and the resolve endpoint                      |
+| D2  | The resolve endpoint is built and hosted by Delivr. Its home is recorded internally            |
+| D3  | v1 is company-only block and variant swap. No contact identity, audiences, webhook or pre-fill |
+| D4  | First deployment is a dogfood on delivr-ai-website. No npm publish in v1                       |
+| D5  | The core is split from Payload, because delivr-ai-website runs no CMS                          |
+| D6  | Resolution uses Delivr.ai data only. Never fall back to another dataset                        |
 
-## 3. Goals
+## 3. Users
 
-**G1.** Drop-in plugin. < 30 min to working personalization on existing Payload site.
-**G2.** No editor leaves Payload admin to configure audiences or variants.
-**G3.** Zero TTFB regression. Personalization runs in RSC under 50ms p50.
-**G4.** Single source of truth for analytics — Delivr Snowflake. Mirror rollups for inline admin badges.
-**G5.** Privacy-compliant. GDPR/CCPA aware. Anonymous fallback always works.
+| Persona          | v1 need                                                        |
+| ---------------- | -------------------------------------------------------------- |
+| Developer        | One function call returns who the visitor's company is         |
+| Marketing editor | Mark a block or variant for an industry or a named account     |
+| Growth           | See how often resolution succeeds and which variants are shown |
+| Visitor          | Content relevant to their company. Default content otherwise   |
 
-## 4. Non-goals (v1)
+## 4. Goals for v1
 
-- A/B test statistical engine (use Delivr existing analytics).
-- Email personalization. Web only.
-- Mobile native SDK.
-- Multi-CMS support — Payload only.
-- Non-Next.js hosts — Payload's official frontend is Next.js App Router.
+- **G1.** Prove the resolve path end to end on real traffic: latency, match
+  rate, failure behavior.
+- **G2.** A page never breaks, and never slows beyond a fixed bound, because
+  of Delivr. Hard cap: 100 ms added, default content on any failure. A build
+  never fails because of it either.
+- **G3.** Rule logic is exact and tested. An editor can predict which block a
+  given company sees.
+- **G4.** The same core serves a plain Next.js site and a Payload site.
 
-## 5. Success Metrics
+## 5. Non-goals for v1
 
-| Metric                                     | Target (90 days post-GA) |
-| ------------------------------------------ | ------------------------ |
-| Time-to-first-personalized-render          | < 30 min from `pnpm add` |
-| Sites in production                        | 10                       |
-| Avg variants per page                      | ≥ 3                      |
-| Identification rate (B2B traffic)          | ≥ 65% company match      |
-| Conversion lift on personalized vs control | ≥ +15%                   |
-| RSC render p50 with Delivr resolution      | < 50ms                   |
-| Editor NPS for variant authoring           | ≥ 40                     |
+- Contact identity: email, title, seniority.
+- Rules on company size or revenue.
+- Audience sync, intent topics, technologies.
+- Webhooks, admin UI beyond one field group, preview-as.
+- A/B statistics.
+- Public npm release, public docs, design partners.
+- Non-Next.js hosts.
 
-## 6. Scope — MVP (v1)
+## 6. Scope
 
 **In:**
 
-- Pixel install via Next.js Script in host `app/layout.tsx`
-- `getVisitorContext()` RSC server util — IP → company, cookie → HEM → contact
-- Block-level `audienceRules` field auto-injected
-- RSC `renderBlocks()` helper — filters + scores
-- Variant fields for Hero/CTA/RichText/Image
-- `delivr-audiences` collection synced nightly
-- Form pre-fill helper (`useDelivrPrefill` hook)
-- Webhook endpoint `/api/delivr/webhook`
-- Per-render emit of `cms.variant_shown` event
-- Anonymous fallback path (no consent → render default)
-- Env config + healthcheck endpoint
-- TypeScript types exported
+- Visitor Resolve API: IP in, one company or none out
+- `@delivr/personalization`: resolve client, cache, circuit breaker, client IP
+  handling, bot guard, rule matcher, `selectVariant`, `selectBlocks`
+- `@delivr/payload-plugin-delivr`: `audienceRules` field on opted-in blocks
+- Contract fixtures, a response schema and a mock resolve server
+- Payload demo app
+- Dogfood on one or two routes of delivr-ai-website
 
-**Out (v2+):**
+**Out:** everything in SPEC section 17.
 
-- Intent-signal triggered modules
-- Embedded Delivr analytics view inside Payload admin
-- Visual variant preview ("Preview as Acme CFO")
-- Multi-variant scoring + bandit selection
-- CDN edge resolution (Vercel Edge Middleware) for static pages
-- Account-based routing (known account → assigned AE Calendly)
-- Repeat-visitor escalation logic
-- Performance rollup mirror collection
-- Geo/locale personalization
-- Navigation reorder Global field
+## 7. Success measures
 
-## 7. MVP cuts (sequence)
+The 2026-05-28 draft set targets with no data behind them (65% company match,
++15% conversion lift, 50 ms p50). They are withdrawn. v1 measures first.
 
-| Cut    | Scope                                                           | Ships   |
-| ------ | --------------------------------------------------------------- | ------- |
-| **α1** | Pixel + `getVisitorContext` + IP-only firmographics             | Week 2  |
-| **α2** | Block `audienceRules` field + RSC renderer + industry/size swap | Week 4  |
-| **β1** | Variant fields + form pre-fill + audience collection sync       | Week 6  |
-| **β2** | Webhook + variant_shown event emit + healthcheck                | Week 8  |
-| **GA** | Docs + demo app + 3 design partner sites in prod                | Week 10 |
+Event terms are defined in SPEC section 12. "Made a call" means `source` is
+`fresh` or `fallback`.
+
+| #   | Measure                               | Definition                                                               | v1 outcome                          |
+| --- | ------------------------------------- | ------------------------------------------------------------------------ | ----------------------------------- |
+| M1  | Resolve latency, p50 and p99          | `durationMs` over events that made a call. Timeouts are included         | Reported                            |
+| M2  | Timeout rate                          | `timeout` events that made a call, over all events that made a call      | Reported                            |
+| M3  | Match rate                            | Matched `fresh` events over all `fresh` events                           | Reported                            |
+| M4  | Ambiguous rate                        | `ambiguous` `fresh` events over all `fresh` events                       | Reported. Drives the threshold      |
+| M5  | `no_ip` rate                          | `no_ip` events over all events except `bot`, `disabled`, `misconfigured` | At or below 0.5%. Starting gate     |
+| M6  | Page errors caused by the integration | Errors in the host's error tracking traced to this code                  | Zero                                |
+| M7  | Existing pixel event volume           | Daily events during dogfood against the 4 weeks before it                | Inside that 4-week min to max range |
+| M8  | Page timing on personalized routes    | TTFB p75 before and after, from the host's own measurement               | Reported                            |
+| M9  | Variant exposure by slot              | `onSelect` events. In stage 1 these are "would have been shown"          | Reported                            |
+| M10 | Misconfigured events                  | Count of `misconfigured` events in production                            | Zero                                |
+
+**Sample floor.** No measure is read as a gate until it covers at least 7
+days and at least 1,000 events that made a call. A rate computed on nothing
+passes nothing.
+
+"Reported" means there is no target yet, because no baseline exists. Whether
+to go further (more rule inputs, Payload release, public release) is the
+product owner's decision on these numbers.
 
 ## 8. Constraints
 
-- **Privacy:** Cookie consent required before HEM resolution. IP-only firmographics treated as business data (lawful basis: legitimate interest B2B).
-- **Latency:** `data-api` resolution must not block render > 100ms. Timeout → anonymous fallback.
-- **Cost:** Cache resolutions 5 min per (IP, cookie) tuple. Avoid per-page hits.
-- **Compatibility:** Payload 3.x, Next.js 15+, Node 22 LTS.
-- **Security:** API keys server-only. Pixel ID public. No PII in Payload DB by default.
+- **Latency:** 100 ms deadline on the resolve call. No retries.
+- **Data:** Delivr.ai resolution only. No third-party fallback (D6).
+- **Privacy:** company-level data only. The visitor IP is sent server to
+  server over HTTPS and held only in process memory.
+- **Caching:** personalized HTML must not be stored by a shared cache.
+- **Compatibility:** Node 22, Next.js 15 or later, React 19. Payload 3.x for
+  the Payload layer.
+- **Repository:** this repository is public. Internal service details stay
+  out of it.
 
 ## 9. Risks
 
-| Risk                                                 | Mitigation                                                              |
-| ---------------------------------------------------- | ----------------------------------------------------------------------- |
-| `data-api` latency spikes block TTFB                 | Hard timeout 100ms + per-request `unstable_cache` + LRU                 |
-| Editors over-configure variants → maintenance burden | "Fallback" required on every block; lint warns on >5 variants           |
-| Cookie consent denial collapses identification       | IP→company path needs no cookie. Document gracefully.                   |
-| Payload schema changes break Block injection         | Pin compatible Payload version range. CI matrix test.                   |
-| Variant explosion → CMS performance degrades         | Server-side filter before serialize. Don't ship all variants to client. |
+| Risk                                                    | Mitigation                                                         |
+| ------------------------------------------------------- | ------------------------------------------------------------------ |
+| The resolve endpoint does not exist                     | Contract first. Client builds against fixtures and a mock server   |
+| An address can be shared by several companies           | Confidence threshold. The ambiguous rate is unknown until measured |
+| Match rate on real traffic is too low to matter         | Phase 0 checks this before anything is built                       |
+| Wrong client IP setting gives silently wrong answers    | No default. Core-side checks. `no_ip` measure. Forged-header test  |
+| Personalized HTML cached in front of the site           | Response header check per route in the deployed environment        |
+| Making static marketing pages dynamic costs performance | Named routes only. Page timing is measured (M8)                    |
+| Resolve endpoint used as a bulk IP lookup               | Per-key rate limit and quota. Correct client IP configuration      |
+| Missing configuration breaks a build or a route         | `createDelivr` never throws. Kill switch needs no other settings   |
+| Missing configuration goes unnoticed                    | `misconfigured` is its own reason, and M10 must be zero            |
 
-## 10. Open questions
+## 10. Dependencies
 
-- Should variant_shown events go via pixel-api (client) or integration-service (server)? **Lean server** for reliability.
-- Multi-tenant Payload (Payload Cloud) — per-tenant pixel ID config? **v2.**
-- Rich text inline personalization (per-paragraph variants) — Lexical extension? **v2.**
-- Caching layer: in-process LRU vs Redis vs Vercel KV? **Start LRU. Make pluggable.**
+| Dependency          | State                                          |
+| ------------------- | ---------------------------------------------- |
+| Visitor Resolve API | Not built. Contract in RESOLVE-API.md          |
+| delivr-ai-website   | Next.js 16, no CMS. Receives the core package  |
+| Payload 3.x         | Needed for the Payload layer and the demo only |
 
-## 11. Dependencies
+## 11. Open questions
 
-- Delivr `pixel-api` — must accept `cms.*` event types
-- Delivr `data-api` — must expose `/resolve` taking `{ip, cookie?, hem?}` → VisitorContext
-- Delivr dashboard — audience export API for `delivr-audiences` sync
-- Payload 3.x stable
-- `db-organization-model` — no change (CMS is not a CRM destination)
+For the builder unless marked.
 
-## 12. Launch plan
+| #   | Question                                                                          |
+| --- | --------------------------------------------------------------------------------- |
+| Q1  | How does delivr-ai-website consume a private package? Registry or git             |
+| Q2  | Which routes are personalized first, and with what variants? (product owner)      |
+| Q3  | What is the correct client IP setting behind the website's proxy chain?           |
+| Q4  | Does anything in front of the website cache HTML?                                 |
+| Q5  | Should this repository move to the company's GitHub organization? (product owner) |
+| Q6  | Service-side items R1 to R8 in RESOLVE-API.md                                     |
 
-- Week 1-2: α1 internal dogfood (delivr-ai-website)
-- Week 4: α2 design-partner alpha — 2 sites
-- Week 6: β1 invite-only — 5 sites
-- Week 10: GA, public npm, OSS, launch post
+## 12. After v1
+
+Considered only once the v1 measures are in:
+
+- More rule inputs, each backed by a verified data contract
+- Resolution in `proxy.ts` with pre-rendered variants
+- Payload field-level variants, admin badges, preview-as
+- Contact identity with consent gating
+- Audience sync and intent
+- Shared cache
+- Public npm release and docs
