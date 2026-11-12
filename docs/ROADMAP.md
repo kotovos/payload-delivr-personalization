@@ -138,7 +138,8 @@ call:
 - Check the response headers of each chosen route for shared caching (PRD Q4)
 - Debug view of the resolved context, not reachable by the public (#9)
 - Run the forged-header check in CLIENT-IP.md section 8, using the debug
-  view. It includes a request sent around the edge, straight to the origin
+  view. It includes requests sent around the edge, straight to the origin,
+  for the debug view and for a personalized route
 - Kill switch verified: `DELIVR_ENABLED=false` with the other settings removed
 
 **Stage 1 report.** A value for each of M1 to M10.

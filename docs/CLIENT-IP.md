@@ -178,23 +178,32 @@ example `203.0.113.99`.
    forged entry is not enough: when `trustedProxies` is too high, a short
    list gives no address at all, and only a list long enough to fill the gap
    exposes the fault. For `header`, forge that header with X.
-2. Send the same forged request for the debug view straight to the origin,
-   around the edge, by any route that might exist.
-3. Read the address in the response to each forged request. It is the
-   address the core computed for that request. Do not open the view in a
-   separate request without the forged header: that shows T whatever the
-   setting is, and proves nothing.
+2. Send forged requests straight to the origin, around the edge, by any
+   route that might exist. Send one for the debug view **and one for a
+   personalized route**. The debug view has its own access control, so its
+   refusal alone says nothing about the origin. A personalized route is the
+   thing a visitor would actually reach.
+3. Read the address in the response to each forged request from step 1. It
+   is the address the core computed for that request. Do not open the view
+   in a separate request without the forged header: that shows T whatever
+   the setting is, and proves nothing.
 
 Pass, all of:
 
 - Every request through the edge shows exactly T.
-- The request around the edge is refused or cannot connect.
+- Both requests around the edge are stopped before they reach the app: the
+  connection fails, or the ingress in front of the app rejects it.
 
 Fail, any of:
 
 - X is shown. The app trusted what the visitor sent.
 - No address is shown. `trustedProxies` is higher than the real chain.
-- The request around the edge is served.
+- The personalized route is served around the edge, with any content.
+- The debug view is served around the edge.
+
+A refusal produced by the app itself does not count as stopped. If the debug
+view answers a direct request with its own "not allowed" page, the request
+reached the app, and the origin is open.
 
 Fix the `clientIp` setting or close the origin before any variant renders.
 
