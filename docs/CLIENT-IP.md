@@ -130,15 +130,26 @@ They never occur in real traffic behind a correct proxy chain.
 
 ## 7. Forged headers
 
-If `trustedProxies` is too high, or the header is one the visitor controls, a
-visitor can submit any address. Then:
+A visitor can submit any address when one of these is true:
 
-- They see another company's variant.
+- `trustedProxies` is higher than the number of proxies that really append to
+  the header.
+- The source is a header the visitor controls.
+- The app can be reached without passing through the trusted proxies.
+
+The third defeats a correct setting. A request sent straight to the origin
+carries whatever headers its sender likes. **The origin must accept traffic
+only from the trusted proxies**, by a network rule or an authenticated link
+from the edge. That is a deployment requirement. The core cannot enforce it.
+
+When an address can be forged:
+
+- The visitor sees another company's variant.
 - They can probe which address maps to a named account.
 - A script can burn the resolve quota and fill the cache with junk.
 
-Correct configuration is the defense. The service's per-key rate limit is the
-backstop.
+Correct configuration and a closed origin are the defense. The service's
+per-key rate limit is the backstop.
 
 ## 8. How to tell it is wrong
 
@@ -148,21 +159,39 @@ is misconfigured. SPEC section 12 defines the rate.
 The opposite mistake, reading an address the visitor controls, does not show
 in that number. It needs a direct test.
 
-**The forged-header check.** Run it through the real edge, in the deployed
-environment:
+**The forged-header check.** Run it in the deployed environment. It needs a
+debug view, not reachable by the public, that shows the address the core
+used. `delivr.inspectClientIp(headers)` returns it (SPEC section 3).
 
-1. Pick an address known to resolve to some company X. Do not run the test
-   from X's own network.
-2. Send a request to a personalized route with a browser user agent and the
-   header `x-forwarded-for: <that address>`. If the source is a single
-   header, forge that header instead.
-3. Read the resolved context in the debug view.
+Let T be the tester's own public address, and X a different address, for
+example `203.0.113.99`.
 
-Pass: the context is not company X. The edge overwrote or appended to the
-header, and the app used the address the edge saw.
+1. Through the real edge, send a request to a personalized route with a
+   browser user agent and a forged header. For `forwardedFor`, send
+   `x-forwarded-for` holding X repeated `trustedProxies` times, then again
+   with one more X. A single forged entry is not enough: when
+   `trustedProxies` is too high, a short list gives no address at all, and
+   only a list long enough to fill the gap exposes the fault. For `header`,
+   forge that header with X.
+2. Send the same forged request straight to the origin, around the edge, by
+   any route that might exist.
+3. Read the address in the debug view each time.
 
-Fail: the context is company X. The app trusted what the visitor sent. Fix
-the `clientIp` setting before any variant renders.
+Pass, all of:
+
+- Every request through the edge shows exactly T.
+- The request around the edge is refused or cannot connect.
+
+Fail, any of:
+
+- X is shown. The app trusted what the visitor sent.
+- No address is shown. `trustedProxies` is higher than the real chain.
+- The request around the edge is served.
+
+Fix the `clientIp` setting or close the origin before any variant renders.
+
+Showing "not X" is not a pass. The result has to be the tester's real
+address.
 
 A script without a browser user agent is treated as a bot and never reaches
 client IP handling, so it proves nothing.

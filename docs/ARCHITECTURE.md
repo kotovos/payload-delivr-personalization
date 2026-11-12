@@ -106,22 +106,23 @@ out also keeps the rule logic testable without booting Payload.
 
 ## Failure modes
 
-| Failure                                 | Behavior                                                            |
-| --------------------------------------- | ------------------------------------------------------------------- |
-| Required option missing or invalid      | Anonymous, `misconfigured`, one error log. No throw, so builds pass |
-| Kill switch on                          | Anonymous, `disabled`. No other setting is needed                   |
-| Resolve API deadline hit                | Anonymous, `timeout`. Counts toward the breaker                     |
-| Network error, 5xx, invalid 200 body    | Anonymous, `error`. Counts toward the breaker                       |
-| 5 consecutive failures                  | Breaker opens for 30 s. Requests skip the call                      |
-| 429                                     | Anonymous, `rate_limited`. Breaker opens for `Retry-After`          |
-| 401 or 403                              | Anonymous, `rejected`. Breaker opens for 60 s, one error log        |
-| Any other status                        | Anonymous, `rejected`. Breaker unchanged unless it was the probe    |
-| No client IP, or a blocked one          | Anonymous, `no_ip`. No call is made                                 |
-| `isBot` or a `clientIp` function throws | Caught and logged. Not a bot, or `no_ip`                            |
-| Wrong client IP setting                 | Silent. Wrong or no company. Watch the `no_ip` and match rates      |
-| Visitor forges the client IP header     | Only possible when the setting is wrong. See CLIENT-IP.md           |
-| Shared cache stores personalized HTML   | One company's variant reaches everyone. Check response headers      |
-| Hook throws                             | Caught and logged. Rendering continues                              |
+| Failure                                 | Behavior                                                               |
+| --------------------------------------- | ---------------------------------------------------------------------- |
+| Required option missing or invalid      | Anonymous, `misconfigured`, one error log. No throw, so builds pass    |
+| Kill switch on                          | Anonymous, `disabled`. No other setting is needed                      |
+| Resolve API deadline hit                | Anonymous, `timeout`. Counts toward the breaker                        |
+| Network error, 5xx, invalid 200 body    | Anonymous, `error`. Counts toward the breaker                          |
+| 5 consecutive failures                  | Breaker opens for 30 s. Requests skip the call                         |
+| 429                                     | Anonymous, `rate_limited`. Breaker opens for `Retry-After`             |
+| 401 or 403                              | Anonymous, `rejected`. Breaker opens for 60 s, one error log           |
+| Any other status                        | Anonymous, `rejected`. Breaker unchanged unless it was the probe       |
+| No client IP, or a blocked one          | Anonymous, `no_ip`. No call is made                                    |
+| `isBot` or a `clientIp` function throws | Caught and logged. Not a bot, or `no_ip`                               |
+| Wrong client IP setting                 | Silent. Wrong or no company. Watch the `no_ip` and match rates         |
+| Visitor forges the client IP header     | Possible when the setting is wrong or the origin is reachable directly |
+| Response body over 16 KB                | Anonymous, `error`. Not parsed. Counts toward the breaker              |
+| Shared cache stores personalized HTML   | One company's variant reaches everyone. Check response headers         |
+| Hook throws                             | Caught and logged. Rendering continues                                 |
 
 Every runtime failure degrades to the default content. Nothing in the request
 path can fail the page or the build.
@@ -137,8 +138,10 @@ path can fail the page or the build.
 | Worst case added to a page       | 100 ms                     | Hard limit             |
 | Worst case with the breaker open | under 1 ms                 | By design              |
 
-The deadline covers the whole call: connect, send, read and parse. The cache
-is synchronous and in process, so it adds nothing to the worst case.
+The deadline covers the whole call: connect, send, read and parse. The client
+reads at most 16 KB, so parsing cannot run long. `timeoutMs` cannot be set
+above 100. The cache is synchronous and in process, so it adds nothing to the
+worst case.
 
 None of the latency numbers are measured. Dogfood produces the first real
 values. The first call after a process starts pays connection setup inside

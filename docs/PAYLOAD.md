@@ -46,9 +46,14 @@ export interface DelivrPayloadOptions {
   programming error and should stop the boot. The lookup must cover every
   place the pinned Payload version lets a block be declared (P2 in section
   6). Until P2 is answered, treat this rule as provisional.
-- **Idempotent.** A block definition that already has a field named
-  `audienceRules` is left alone. That covers one block object referenced from
-  several places, and repeated config builds during hot reload.
+- **Idempotent.** The injected group carries a marker,
+  `custom: { delivrAudienceRules: true }`. A block definition that already
+  has the marked field is left alone. That covers one block object referenced
+  from several places, and repeated config builds during hot reload.
+- **Name collision.** A block that has a field named `audienceRules` without
+  the marker has a field of the host's own. The plugin throws while the
+  config is built, naming the block. It never reuses, extends or overwrites a
+  host field, because editors would then not get the documented fields.
 - **Empty `include`.** The plugin does nothing.
 
 Injection can reach nested blocks. Selection does not recurse (RULES.md
@@ -75,10 +80,19 @@ that inner list where it renders it.
 Stored data may hold `null` for an empty list and an empty string for an
 empty text field. The core treats both as not set (RULES.md section 2).
 
-**Cleaning on save.** A `beforeValidate` field hook applies the RULES.md
-section 2 normalization to `domains` and `naicsPrefixes` and trims `slot`.
-A pasted `https://www.acme.com/pricing` is saved as `acme.com`. Blank entries
-are removed.
+**Cleaning on save.** A `beforeValidate` field hook trims `slot` and works
+through `domains` and `naicsPrefixes` in this order:
+
+1. Remove entries that are blank. Blank means empty after trimming what the
+   editor typed, before any other step.
+2. Normalize each remaining entry (RULES.md section 2). A pasted
+   `https://www.acme.com/pricing` becomes `acme.com`.
+3. If normalization leaves an entry empty or invalid, keep it exactly as
+   typed. `https://` is the example: it is not blank, and normalizing it
+   leaves nothing.
+
+Step 3 matters. Dropping such an entry would empty the field, and an empty
+field shows the block to everyone. Keeping it lets validation reject it.
 
 **Validation.** After cleaning:
 
@@ -154,6 +168,7 @@ reality differs:
 | P4  | Allowed characters in `select` option values, on the SQL adapters and in GraphQL                             |
 | P5  | What an empty `hasMany` field and an empty text field come back as                                           |
 | P6  | That `beforeValidate` field hooks run inside a group injected into a block                                   |
+| P7  | That a field accepts a `custom` property the plugin can read back at config time                             |
 
 ## 7. Not in v1
 

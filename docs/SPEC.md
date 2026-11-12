@@ -70,7 +70,7 @@ export interface DelivrOptions {
   resolveKey?: string; // server only
   pixelId?: string;
   clientIp?: ClientIpSource; // CLIENT-IP.md. No default
-  timeoutMs?: number; // default 100
+  timeoutMs?: number; // default 100. Maximum 100
   cacheTtlSeconds?: number; // default 300, matched results
   negativeCacheTtlSeconds?: number; // default 60, not-matched results
   cacheMaxEntries?: number; // default 1000
@@ -89,6 +89,7 @@ export interface Delivr {
   getVisitorContext(headers: Headers): Promise<VisitorContext>;
   selectVariant: SelectVariant; // RULES.md section 6
   selectBlocks: SelectBlocks; // RULES.md section 7
+  inspectClientIp(headers: Headers): string | undefined; // debug only, see below
 }
 
 export function createDelivr(options: DelivrOptions): Delivr;
@@ -109,8 +110,17 @@ without runtime secrets, and a throw there fails the build or every route.
 - `resolveUrl` is invalid unless it parses as an `https:` URL.
 - `pixelId` is invalid when it is longer than 64 characters.
 - `clientIp` validity is defined in CLIENT-IP.md section 1.
+- `timeoutMs` above 100 is set to 100, and `logger.warn` is called once. The
+  100 ms cap is a guarantee, not a default a host can raise.
+- A numeric option that is not a finite number greater than zero falls back
+  to its default. That does not make the instance misconfigured.
 - A misconfigured instance calls `logger.error` once, naming each bad option.
 - The selectors work normally in every state.
+
+`inspectClientIp` returns the canonical address the core would use for these
+headers, or `undefined` when there is none. It makes no call and fires no
+event. It exists for a debug view that is not reachable by the public
+(CLIENT-IP.md section 8).
 
 Off and misconfigured are different reasons on purpose. The kill switch is
 expected. A misconfigured production instance is a fault, and it must show up
@@ -240,6 +250,13 @@ One `fetch` per request that reaches row 8 or later.
 
 `gpc` is `true` when the visitor request has the header `Sec-GPC: 1`.
 
+**Response size.** The client reads at most 16 KB of a response body. A body
+that is longer is invalid (row 11) and is not parsed. The contract limits a
+200 body to 4 KB, so a correct service never comes near this. The bound
+exists because `JSON.parse` is synchronous and cannot be aborted: without it
+a huge body could hold the thread past the deadline. Parsing 16 KB or less is
+negligible next to 100 ms.
+
 **Validating a 200 body.** It must be a JSON object with a boolean `matched`.
 
 - `matched: true` requires `company.domain` to be a string that is a valid
@@ -315,6 +332,13 @@ is in flight, other requests take row 7.
 - Other statuses call `logger.warn`, at most once per minute.
 - Only timeouts, network errors, 5xx and invalid bodies raise the count. Bad
   input from a visitor can therefore never open the breaker.
+- **Calls already in flight.** A call that started while the breaker was
+  closed can finish after something else opened it. Unless that call is the
+  probe, its result does not touch the breaker. A late 200 does not close it.
+  A late timeout or 5xx does not raise the count or restart the open period.
+  A late 429, 401 or 403 does not change when the open period ends. The
+  request itself still gets its outcome from section 4, and a valid answer is
+  still cached. Only the probe decides what happens when an open period ends.
 
 The numbers are defaults to tune in dogfood.
 
@@ -381,9 +405,13 @@ A `shared` event made no call and has `durationMs: 0`.
 | `no_ip` rate   | `no_ip` events over all events except `bot`, `disabled`, `misconfigured`     |
 | Misconfigured  | Count of `misconfigured` events. Must be zero in production                  |
 
-Every numerator and denominator counts only events from the request that made
-the call. `cache` and `shared` events repeat an earlier answer, so they are
-never counted in a rate.
+Latency, timeout rate, match rate and ambiguous rate count only events from
+requests that made a call. `cache` and `shared` events repeat an earlier
+answer, so they are left out of those four.
+
+The `no_ip` rate and the misconfigured count are different. They describe
+requests, not calls, and a `no_ip` or `misconfigured` event never makes a
+call. They count every event, exactly as their rows say.
 
 `SelectEvent` is defined in RULES.md section 8.
 
@@ -424,7 +452,7 @@ With `DELIVR_ENABLED=false` the other three may be absent.
 | Unit        | Body validation and field mapping, section 7                                                    |
 | Unit        | Cache: TTLs, eviction, GPC bypass both ways, single flight and `shared`                         |
 | Unit        | Breaker: every cell of the section 9 table, and each Retry-After form                           |
-| Unit        | `createDelivr`: off, each option missing or invalid, no throw, one log                          |
+| Unit        | `createDelivr`: off, each option missing or invalid, no throw, one log, `timeoutMs` cap                          |
 | Unit        | Rules and selectors: the RULES.md section 9 tables                                              |
 | Contract    | Resolve client against every client fixture (RESOLVE-API section 9.1)                           |
 | Integration | Demo app with a forced IP header and a browser user agent, against the mock server              |

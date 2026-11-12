@@ -50,9 +50,11 @@ digits.
 
 **Entries.** For every rule field:
 
-- `null`, `undefined` and entries that are blank after trimming are ignored.
-- A non-blank entry that is not valid stays in the list as an entry that can
-  never match.
+- `null`, `undefined` and entries that are blank are ignored. Blank means
+  empty after trimming the entry as written, before any other step.
+- Every other entry stays in the list. If it is not valid after
+  normalization, it stays as an entry that can never match. `https://` is not
+  blank as written, so it stays, even though normalization leaves nothing.
 - A field is **populated** when at least one entry is left, valid or not.
 
 So an empty field restricts nothing, and a field holding only a typo matches
@@ -91,17 +93,34 @@ whose domain is `eu.acme.com`.
 
 ## 4. Specificity
 
-When several rules match, the most specific wins.
+When several rules match, the most specific wins. Rules are compared on three
+things, in this order:
 
-| Matched condition | Score                                                |
-| ----------------- | ---------------------------------------------------- |
-| Domain            | 100                                                  |
-| NAICS             | 10 plus the length of the longest entry that matched |
-| Country           | 1                                                    |
+1. Did a domain condition match?
+2. How long is the longest NAICS entry that matched? No NAICS condition
+   counts as 0.
+3. Did a country condition match?
 
-Scores add. The maximum is 117. An unconditional rule scores 0. A named
-account always beats an industry rule. A longer NAICS prefix beats a shorter
-one. Ties go to author order: the earlier item wins.
+The score puts that order into one number:
+
+| Matched condition | Score                                             |
+| ----------------- | ------------------------------------------------- |
+| Domain            | 1000                                              |
+| NAICS             | 10 times the length of the longest matching entry |
+| Country           | 1                                                 |
+
+Scores add. NAICS contributes 20 to 60. The maximum is 1061. An unconditional
+rule scores 0.
+
+The weights make the order strict, across rules and not only within one:
+
+- A named account beats every rule without one.
+- Otherwise the longer matching NAICS prefix wins, whatever else the rules
+  contain. `naicsPrefixes: ["522"]` scores 30 and beats
+  `naicsPrefixes: ["52"], hqCountries: ["US"]` at 21.
+- Country only separates rules that are otherwise equal.
+
+Ties go to author order: the earlier item wins.
 
 ## 5. `matchRule`
 
@@ -238,43 +257,46 @@ Company B: `domain: "globex.com"`, no `naics`, no `hqCountry`.
 | 3   | `{ domains: null, naicsPrefixes: [] }`                                      | A         | yes     | 0     |
 | 4   | `{ naicsPrefixes: ["", "  "] }`                                             | A         | yes     | 0     |
 | 5   | `{ naicsPrefixes: ["5 2", "abc"] }`                                         | A         | no      | 0     |
-| 6   | `{ naicsPrefixes: ["abc", "52"] }`                                          | A         | yes     | 12    |
+| 6   | `{ naicsPrefixes: ["abc", "52"] }`                                          | A         | yes     | 20    |
 | 7   | `{ domains: ["acme.com"] }`                                                 | anonymous | no      | 0     |
-| 8   | `{ domains: ["acme.com"] }`                                                 | A         | yes     | 100   |
-| 9   | `{ domains: [" WWW.Acme.com. "] }`                                          | A         | yes     | 100   |
-| 10  | `{ domains: ["https://www.acme.com/pricing?x=1"] }`                         | A         | yes     | 100   |
-| 11  | `{ domains: ["acme.com:443"] }`                                             | A         | yes     | 100   |
+| 8   | `{ domains: ["acme.com"] }`                                                 | A         | yes     | 1000  |
+| 9   | `{ domains: [" WWW.Acme.com. "] }`                                          | A         | yes     | 1000  |
+| 10  | `{ domains: ["https://www.acme.com/pricing?x=1"] }`                         | A         | yes     | 1000  |
+| 11  | `{ domains: ["acme.com:443"] }`                                             | A         | yes     | 1000  |
 | 12  | `{ domains: ["acme"] }`                                                     | A         | no      | 0     |
 | 13  | `{ domains: ["eu.acme.com"] }`                                              | A         | no      | 0     |
-| 14  | `{ naicsPrefixes: ["52"] }`                                                 | A         | yes     | 12    |
-| 15  | `{ naicsPrefixes: ["52", "5221"] }`                                         | A         | yes     | 14    |
-| 16  | `{ naicsPrefixes: ["62", "52"] }`                                           | A         | yes     | 12    |
+| 14  | `{ naicsPrefixes: ["52"] }`                                                 | A         | yes     | 20    |
+| 15  | `{ naicsPrefixes: ["52", "5221"] }`                                         | A         | yes     | 40    |
+| 16  | `{ naicsPrefixes: ["62", "52"] }`                                           | A         | yes     | 20    |
 | 17  | `{ industries: ["31_32_33"] }`                                              | A         | no      | 0     |
 | 18  | `{ industries: ["finance"] }`                                               | A         | no      | 0     |
-| 19  | `{ industries: ["52"], naicsPrefixes: ["62"] }`                             | A         | yes     | 12    |
+| 19  | `{ industries: ["52"], naicsPrefixes: ["62"] }`                             | A         | yes     | 20    |
 | 20  | `{ naicsPrefixes: ["52"] }`                                                 | B         | no      | 0     |
 | 21  | `{ hqCountries: ["us"] }`                                                   | A         | yes     | 1     |
 | 22  | `{ naicsPrefixes: ["52"], hqCountries: ["DE"] }`                            | A         | no      | 0     |
-| 23  | `{ naicsPrefixes: ["52"], hqCountries: ["US"] }`                            | A         | yes     | 13    |
-| 24  | `{ domains: ["acme.com"], naicsPrefixes: ["522110"], hqCountries: ["US"] }` | A         | yes     | 117   |
+| 23  | `{ naicsPrefixes: ["52"], hqCountries: ["US"] }`                            | A         | yes     | 21    |
+| 24  | `{ domains: ["acme.com"], naicsPrefixes: ["522110"], hqCountries: ["US"] }` | A         | yes     | 1061  |
 | 25  | `{ domains: ["acme.com"], naicsPrefixes: ["62"] }`                          | A         | no      | 0     |
+| 26  | `{ domains: ["https://"] }`                                                 | A         | no      | 0     |
+| 27  | `{ naicsPrefixes: ["522"] }`                                                | A         | yes     | 30    |
 
 Rows 3 and 4 are unconditional: only blanks, so nothing is populated. Rows 5,
-12 and 18 are populated by invalid entries, so they match nobody.
+12, 18 and 26 are populated by invalid entries, so they match nobody.
 
 Selector cases:
 
-| #   | Case                                                | Expected                         |
-| --- | --------------------------------------------------- | -------------------------------- |
-| S1  | `selectVariant([])`                                 | `undefined`, one event, no id    |
-| S2  | Two matching variants, scores 12 and 100            | The 100                          |
-| S3  | Two matching variants, equal score                  | The earlier one                  |
-| S4  | No conditional match, two unconditional variants    | The earlier unconditional        |
-| S5  | No conditional match, no unconditional variant      | `undefined`                      |
-| S6  | `selectBlocks`: the section 7 example, bank visitor | Blocks 2 and 3                   |
-| S7  | Same, anonymous visitor                             | Blocks 1 and 3                   |
-| S8  | Slot with conditional blocks only, none matching    | No block from that slot          |
-| S9  | Blocks with `slot: ""`, `slot: null`, `slot: "  "`  | All treated as no slot           |
-| S10 | Slots `Hero` and `hero`                             | Two separate slots               |
-| S11 | Output order                                        | Same relative order as the input |
-| S12 | A block with a nested block list carrying rules     | Inner list untouched             |
+| #   | Case                                                 | Expected                         |
+| --- | ---------------------------------------------------- | -------------------------------- |
+| S1  | `selectVariant([])`                                  | `undefined`, one event, no id    |
+| S2  | Two matching variants, scores 20 and 1000            | The 1000                         |
+| S3  | Two matching variants, equal score                   | The earlier one                  |
+| S4  | No conditional match, two unconditional variants     | The earlier unconditional        |
+| S5  | No conditional match, no unconditional variant       | `undefined`                      |
+| S6  | `selectBlocks`: the section 7 example, bank visitor  | Blocks 2 and 3                   |
+| S7  | Same, anonymous visitor                              | Blocks 1 and 3                   |
+| S8  | Slot with conditional blocks only, none matching     | No block from that slot          |
+| S9  | Blocks with `slot: ""`, `slot: null`, `slot: "  "`   | All treated as no slot           |
+| S10 | Slots `Hero` and `hero`                              | Two separate slots               |
+| S11 | Output order                                         | Same relative order as the input |
+| S12 | A block with a nested block list carrying rules      | Inner list untouched             |
+| S13 | Row 23's rule first, row 27's rule second, visitor A | Row 27's rule, 30 over 21        |

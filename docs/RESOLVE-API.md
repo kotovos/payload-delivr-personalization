@@ -82,6 +82,9 @@ Every response has `Content-Type: application/json` and
 `Cache-Control: no-store`. No intermediary may cache an answer. No response
 sets a cookie.
 
+A response body is at most 4 KB. The client stops reading at 16 KB and treats
+anything longer as invalid.
+
 ### 200, matched
 
 ```json
@@ -275,6 +278,7 @@ In `contracts/resolve/fixtures/`. One JSON file each:
 | `invalid-matched-missing`            | no         | A 200 with no `matched` field                          |
 | `invalid-not-json`                   | no         | A 200 whose body is not JSON                           |
 | `invalid-empty-body`                 | no         | A 200 with an empty body                               |
+| `invalid-oversize-body`              | no         | A 200 whose body is over 16 KB. Client does not parse  |
 | `error-400`                          | yes        | Rejected request                                       |
 | `error-401`                          | yes        | Bad key                                                |
 | `error-403`                          | yes        | Key not bound to the pixel id                          |
@@ -282,7 +286,7 @@ In `contracts/resolve/fixtures/`. One JSON file each:
 | `error-413`                          | yes        | Body too large                                         |
 | `error-415`                          | yes        | Wrong content type                                     |
 | `error-429`                          | yes        | Rate limited, `Retry-After: 7`                         |
-| `error-429-no-header`                | yes        | Rate limited, no `Retry-After`                         |
+| `error-429-no-header`                | no         | Rate limited, no `Retry-After`. Client uses 30         |
 | `error-429-large`                    | yes        | `Retry-After: 600`. Client clamps to 60                |
 | `error-429-date`                     | no         | `Retry-After` as an HTTP date. Client uses 30          |
 | `error-500`                          | yes        | Service failure                                        |
@@ -318,6 +322,7 @@ commit.
 | C11 | Malformed JSON, then an `ip` that is not an address | 400 both times                                 |
 | C12 | Requests above the rate limit                       | 429 with `Retry-After` as whole seconds        |
 | C13 | Any request                                         | `Cache-Control: no-store`, and no `Set-Cookie` |
+| C14 | Any request                                         | A response body of 4 KB or less                |
 
 ## 10. Out of scope for v1
 

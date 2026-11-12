@@ -85,7 +85,7 @@ Contract-level tasks:
 
 **Exit:**
 
-- Conformance checks C1 to C13 in RESOLVE-API section 9.2 pass against the
+- Conformance checks C1 to C14 in RESOLVE-API section 9.2 pass against the
   deployed service
 - Server-side p99 is written into RESOLVE-API section 7 with method, request
   count and date
@@ -125,6 +125,8 @@ Tasks:
 - Record TTFB p75 for the routes chosen in PRD Q2 (M8)
 - Decide package distribution (PRD Q1)
 - Set `clientIp` for the site's proxy chain (PRD Q3)
+- Confirm the origin accepts traffic only from the trusted proxies
+  (CLIENT-IP.md section 7)
 
 **Stage 1, shadow.** At least 7 days and at least 1,000 events that made a
 call:
@@ -135,8 +137,8 @@ call:
 - Wire `onResolve` and `onSelect` to the site's analytics
 - Check the response headers of each chosen route for shared caching (PRD Q4)
 - Debug view of the resolved context, not reachable by the public (#9)
-- Run the forged-header check in CLIENT-IP.md section 8, using the debug view
-  and an address Phase 0 showed to match a company
+- Run the forged-header check in CLIENT-IP.md section 8, using the debug
+  view. It includes a request sent around the edge, straight to the origin
 - Kill switch verified: `DELIVR_ENABLED=false` with the other settings removed
 
 **Stage 1 report.** A value for each of M1 to M10.
@@ -149,7 +151,7 @@ call:
 - M10: zero `misconfigured` events
 - The response header check is recorded for each route, and none allows
   shared caching
-- The forged-header check passed
+- The forged-header check passed on every point in CLIENT-IP.md section 8
 
 **Decision.** The product owner reads the report and records one of:
 continue to stage 2, change scope, stop.
@@ -169,7 +171,7 @@ variant slot on one route renders for real.
 
 Tasks:
 
-- Pin one Payload 3.x version. Work through P1 to P6 in PAYLOAD.md section 6
+- Pin one Payload 3.x version. Work through P1 to P7 in PAYLOAD.md section 6
 - `audienceRulesField` with hooks and validation (#10)
 - `injectIntoBlocks`: opt-in by slug, idempotent, throws on an unknown slug
   (#11)
@@ -182,7 +184,7 @@ Tasks:
   with a browser user agent and a forced documentation-range address. One
   address has a matching fixture, and the test asserts the industry block
   renders. Another has none, and the test asserts the fallback renders
-- P1 to P6 are answered in PAYLOAD.md, and the pinned version is in SPEC
+- P1 to P7 are answered in PAYLOAD.md, and the pinned version is in SPEC
   section 16
 
 ---
