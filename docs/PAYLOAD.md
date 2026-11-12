@@ -94,6 +94,11 @@ through `domains` and `naicsPrefixes` in this order:
 Step 3 matters. Dropping such an entry would empty the field, and an empty
 field shows the block to everyone. Keeping it lets validation reject it.
 
+The stored value is normalized here, and the core normalizes it again at
+match time. That is safe because normalization is idempotent (RULES.md
+section 2): `www.www.acme.com` is stored as `acme.com`, and normalizing
+`acme.com` again gives `acme.com`.
+
 **Validation.** After cleaning:
 
 | Field           | Rule                                        | Message to the editor              |

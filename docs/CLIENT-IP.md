@@ -161,21 +161,29 @@ in that number. It needs a direct test.
 
 **The forged-header check.** Run it in the deployed environment. It needs a
 debug view, not reachable by the public, that shows the address the core
-used. `delivr.inspectClientIp(headers)` returns it (SPEC section 3).
+computed **for the very request that asked for the view**.
+`delivr.inspectClientIp(headers)` returns it from that request's headers
+(SPEC section 3).
+
+The view must sit behind the same edge and the same ingress path as the
+personalized routes, so it receives headers exactly as they do. A view served
+some other way tests some other path.
 
 Let T be the tester's own public address, and X a different address, for
 example `203.0.113.99`.
 
-1. Through the real edge, send a request to a personalized route with a
-   browser user agent and a forged header. For `forwardedFor`, send
-   `x-forwarded-for` holding X repeated `trustedProxies` times, then again
-   with one more X. A single forged entry is not enough: when
-   `trustedProxies` is too high, a short list gives no address at all, and
-   only a list long enough to fill the gap exposes the fault. For `header`,
-   forge that header with X.
-2. Send the same forged request straight to the origin, around the edge, by
-   any route that might exist.
-3. Read the address in the debug view each time.
+1. Through the real edge, request the debug view with a browser user agent
+   and a forged header. For `forwardedFor`, send `x-forwarded-for` holding X
+   repeated `trustedProxies` times, then again with one more X. A single
+   forged entry is not enough: when `trustedProxies` is too high, a short
+   list gives no address at all, and only a list long enough to fill the gap
+   exposes the fault. For `header`, forge that header with X.
+2. Send the same forged request for the debug view straight to the origin,
+   around the edge, by any route that might exist.
+3. Read the address in the response to each forged request. It is the
+   address the core computed for that request. Do not open the view in a
+   separate request without the forged header: that shows T whatever the
+   setting is, and proves nothing.
 
 Pass, all of:
 

@@ -35,11 +35,18 @@ Applied before matching, to rule entries and to the company alike.
 2. Remove a scheme: everything up to and including `://`.
 3. Cut at the first `/`, `?` or `#`.
 4. Remove a port: a final `:` followed by digits.
-5. Remove one leading `www.`.
-6. Remove one trailing `.`.
+5. Remove every trailing `.`.
+6. Remove a leading `www.`, and repeat, for as long as what remains still
+   contains a dot. `www.www.acme.com` becomes `acme.com`. `www.com` stays
+   `www.com`.
 
 Valid when what is left has at least one dot and only letters, digits,
 hyphens and dots. So `https://www.Acme.com/pricing?x=1` becomes `acme.com`.
+
+Normalization is **idempotent**: applied to its own valid output, it changes
+nothing. That is required, not incidental. A CMS may store the normalized
+value, and the core normalizes again at match time. Both must reach the same
+domain.
 
 **NAICS prefix.** Trim. Valid when it is 2 to 6 digits.
 
@@ -279,6 +286,8 @@ Company B: `domain: "globex.com"`, no `naics`, no `hqCountry`.
 | 25  | `{ domains: ["acme.com"], naicsPrefixes: ["62"] }`                          | A         | no      | 0     |
 | 26  | `{ domains: ["https://"] }`                                                 | A         | no      | 0     |
 | 27  | `{ naicsPrefixes: ["522"] }`                                                | A         | yes     | 30    |
+| 28  | `{ domains: ["www.www.acme.com"] }`                                         | A         | yes     | 1000  |
+| 29  | `{ domains: ["acme.com.."] }`                                               | A         | yes     | 1000  |
 
 Rows 3 and 4 are unconditional: only blanks, so nothing is populated. Rows 5,
 12, 18 and 26 are populated by invalid entries, so they match nobody.
