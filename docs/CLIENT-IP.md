@@ -183,6 +183,22 @@ example `203.0.113.99`.
    personalized route**. The debug view has its own access control, so its
    refusal alone says nothing about the origin. A personalized route is the
    thing a visitor would actually reach.
+
+   Connect to the origin's own address, but keep the site's real hostname in
+   both the TLS server name and the `Host` header. With curl that is
+   `--resolve`:
+
+   ```bash
+   curl --resolve www.example.com:443:198.51.100.20 \
+     -A "<a browser user agent>" \
+     -H "x-forwarded-for: 203.0.113.99" \
+     https://www.example.com/pricing
+   ```
+
+   Do not address the origin by its bare IP. TLS or virtual-host routing can
+   reject that request while the same origin still serves the real hostname.
+   The rejection would look like a pass and the bypass would stay open.
+
 3. Read the address in the response to each forged request from step 1. It
    is the address the core computed for that request. Do not open the view
    in a separate request without the forged header: that shows T whatever
