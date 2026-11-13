@@ -1,6 +1,6 @@
 # PayloadCMS layer
 
-**Status:** v1, 2026-11-11. Part of the spec. Read after [RULES.md](RULES.md).
+**Status:** v1, 2026-11-12. Part of the spec. Read after [RULES.md](RULES.md).
 
 `@delivr/payload-plugin-delivr` adds one field group to the blocks a host
 chooses. It adds nothing else in v1: no collections, no endpoints, no jobs.
@@ -30,6 +30,7 @@ export interface DelivrPayloadOptions {
   blocks: { include: string[] }; // block slugs that receive audienceRules
   industryOptions?: { label: string; value: string }[]; // default: section 4
   countryOptions?: { label: string; value: string }[]; // default: section 4
+  departmentOptions?: { label: string; value: string }[]; // default: section 4
 }
 ```
 
@@ -72,10 +73,17 @@ that inner list where it renders it.
     { name: "domains", type: "text", hasMany: true },
     { name: "industries", type: "select", hasMany: true, options: industryOptions },
     { name: "naicsPrefixes", type: "text", hasMany: true },
-    { name: "hqCountries", type: "select", hasMany: true, options: countryOptions },
+    { name: "companyCountries", type: "select", hasMany: true, options: countryOptions },
+    { name: "seniorities", type: "select", hasMany: true, options: seniorityOptions },
+    { name: "departments", type: "select", hasMany: true, options: departmentOptions },
   ],
 }
 ```
+
+The first four rule fields are about the visitor's company, the last two about
+the visitor's role. Every filled field must match (RULES.md section 3), so the
+group's admin description in the shipped plugin says so in one line next to
+the empty-means-everyone note.
 
 Stored data may hold `null` for an empty list and an empty string for an
 empty text field. The core treats both as not set (RULES.md section 2).
@@ -103,7 +111,7 @@ section 2): `www.www.acme.com` is stored as `acme.com`, and normalizing
 
 | Field           | Rule                                        | Message to the editor              |
 | --------------- | ------------------------------------------- | ---------------------------------- |
-| `domains`       | Each entry looks like a hostname with a dot | "Enter a domain like acme.com"     |
+| `domains`       | Each entry is a valid domain (RULES.md section 2) | "Enter a domain like acme.com"     |
 | `naicsPrefixes` | Each entry is 2 to 6 digits                 | "NAICS prefixes are 2 to 6 digits" |
 
 An entry that is still invalid after cleaning is rejected, so it cannot be
@@ -139,13 +147,53 @@ values and API names.
 | Other Services                                   | `81`       |
 | Public Administration                            | `92`       |
 
-A host that overrides `industryOptions` only has to keep NAICS digits in each
-value. Nothing else needs to agree with the core, because the core reads the
-digits straight from the stored value.
+A host that overrides `industryOptions` must use values made only of NAICS
+prefixes joined by underscores (RULES.md section 2). Nothing else needs to
+agree with the core, because the core reads the prefixes straight from the
+stored value.
 
 **`countryOptions`.** The ISO 3166-1 alpha-2 list. Value is the uppercase
 code, label is the English short name. The plugin ships the list as a static
 file.
+
+**`seniorityOptions`.** Fixed. These are the only values the service sends
+(RESOLVE-API section 5), so there is no override.
+
+| Label            | Value      |
+| ---------------- | ---------- |
+| C-level          | `cxo`      |
+| Vice President   | `vp`       |
+| Director         | `director` |
+| Manager          | `manager`  |
+| Individual staff | `staff`    |
+
+**`departmentOptions`.** The known department values from RESOLVE-API section
+6 point 5. Values use underscores in place of spaces, for the same enum reason
+as industries. The core turns underscores back into spaces when it matches
+(RULES.md section 2), so `human_resources` matches `human resources`.
+
+| Label                         | Value                           |
+| ----------------------------- | ------------------------------- |
+| Administrative                | `administrative`                |
+| Community and Social Services | `community_and_social_services` |
+| Customer Service              | `customer_service`              |
+| Education                     | `education`                     |
+| Engineering                   | `engineering`                   |
+| Executive                     | `executive`                     |
+| Finance                       | `finance`                       |
+| Health Services               | `health_services`               |
+| Human Resources               | `human_resources`               |
+| Information Technology        | `information_technology`        |
+| Legal                         | `legal`                         |
+| Marketing                     | `marketing`                     |
+| Media and Communications      | `media_and_communications`      |
+| Operations                    | `operations`                    |
+| Product Management            | `product_management`            |
+| Sales                         | `sales`                         |
+
+A host that overrides `departmentOptions` can add values the service sends
+outside this list. Each value only has to normalize to the department text the
+service sends.
 
 ## 5. Rendering
 
@@ -161,7 +209,7 @@ Fetch the page with the depth the renderer needs. `selectBlocks` only reads
 
 ## 6. Version pin and confirmations
 
-Phase E pins one exact Payload 3.x version and records it in SPEC section 16.
+Phase E pins one exact Payload 3.x version and records it in SPEC section 17.
 Against that version, confirm each of these and correct this file where
 reality differs:
 
@@ -180,4 +228,4 @@ reality differs:
 - Field-level variant helper
 - Admin badges and preview-as
 - Any collection, endpoint or job
-- Pixel installation
+- Pixel installation. The site's existing Delivr pixel is used as it is
