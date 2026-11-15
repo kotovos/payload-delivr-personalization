@@ -10,3 +10,6 @@ dist/
 coverage/
 .vitest-cache/
 .pnpm-store/
+
+# Internal notes: service internals, data sources. This repo is public.
+docs/internal/
